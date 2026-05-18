@@ -1,13 +1,13 @@
-tex/*.aux
-tex/*.bbl
-tex/*.bcf
-tex/*.blg
-tex/*.fdb_latexmk
-tex/*.fls
-tex/*.log
-tex/*.out
-tex/*.pdf
-tex/*.run.xml
-tex/*.synctex.gz
+paper/tex/*.aux
+paper/tex/*.bbl
+paper/tex/*.bcf
+paper/tex/*.blg
+paper/tex/*.fdb_latexmk
+paper/tex/*.fls
+paper/tex/*.log
+paper/tex/*.out
+paper/tex/*.pdf
+paper/tex/*.run.xml
+paper/tex/*.synctex.gz
 
 .DS_Store
