@@ -1,0 +1,153 @@
+% ------------------------------------
+% FA2026 Conference Paper
+% ------------------------------------
+\documentclass[peer-review]{fa2026}
+
+\title{Adaptive Learned FISTA for Robust Acoustic Source Mapping}
+
+\author[1]{Adam Kujawski}
+\author[2]{Jan Christian Riedel}
+\author[1]{Ennes Sarradj}
+\correspondingauthor{adam.kujawski@tu-berlin.de}{Adam Kujawski et al.}
+
+\affil[1]{Department of Engineering Acoustics, Technische Universit\"{a}t Berlin, Germany}
+\affil[2]{Communications and Information Theory, Technische Universit\"{a}t Berlin, Germany}
+
+\addbibresource{fa2026_template.bib}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Covariance matrix fitting (CMF) is an inverse method for microphone array source mapping that estimates source strengths on a predefined focus grid and is commonly formulated as a non-negative Lasso problem. Classical solvers such as OMP, FISTA, and LARS require model selection and often many iterations to obtain satisfactory reconstruction accuracy. Deep unfolded networks (DUNs), which mimic the iterative structure of such solvers, can reduce this computational effort by learning selected algorithmic parameters from ground-truth source maps via supervised learning.
+DUNs for the CMF method typically incorporate knowledge about the acoustic propagation model via the dictionary as part of each iteration. However, in experimental measurement scenarios, the propagation model is influenced by various parameters, including the speed of sound, microphone positions, and source-grid definition, many of which are only approximately known. Consequently, a DUN trained for one nominal dictionary may become miscalibrated when the propagation conditions change. This raises the question of how robust DUNs are to dictionary mismatch and whether their parameters can be adapted using measured data where no ground-truth source maps are accessible.
+Building on existing unfolded algorithms from the field of sparse recovery, namely Ada-LISTA and NA-ALISTA, the resulting DUN is trained on synthetic data under different perturbations of the underlying propagation model and evaluated on experimental data from the MIRACLE dataset to examine the robustness of the method. In addition, unsupervised training is investigated as an alternative training strategy to improve generalization under experimental conditions.
+\end{abstract}
+
+\keywords{covariance matrix fitting, deep unfolding, sparse recovery, dictionary mismatch, microphone array}
+
+
+\section{Introduction}\label{sec:introduction}
+
+\section{Theory}\label{sec:theory}
+
+At a fixed frequency, let $p_b \in \mathbb{C}^{M}$ denote the microphone snapshot and let $s_b \in \mathbb{C}^{N}$ denote the source snapshot on the focus grid for $b = 1,\dots,K$. With additive noise $n_b \in \mathbb{C}^{M}$, the propagation model is
+\begin{equation}
+    p_b = H s_b + n_b ,
+\end{equation}
+where $H \in \mathbb{C}^{M \times N}$ is the transfer matrix with entries
+\begin{equation}
+    H_{m,n} = \frac{r_{0,n}}{r_{m,n}} \exp\!\bigl(-\mathrm{i}k(r_{m,n}-r_{0,n})\bigr) .
+\end{equation}
+Here, $r_{m,n}$ is the distance from focus-grid point $n$ to microphone $m$, $r_{0,n}$ is the distance from focus-grid point $n$ to the reference location, and $k$ is the wavenumber.
+
+The true microphone and source CSMs are
+\begin{equation}
+    C = \mathbb{E}\{p_b p_b^\mathsf{H}\} \in \mathbb{C}^{M \times M}, \qquad
+    Q = \mathbb{E}\{s_b s_b^\mathsf{H}\} \in \mathbb{C}^{N \times N} .
+\end{equation}
+Assuming source-noise independence and spatially white noise with variance $\sigma^2$, the CMF model is
+\begin{equation}
+    C = H Q H^\mathsf{H} + \sigma^2 I .
+\end{equation}
+In the following, to simplify the notation of the inverse problem, the noise term is omitted and the modeled CSM is written as
+\begin{equation}
+    C = H Q H^\mathsf{H} .
+\end{equation}
+If the sources are correlated, then $Q$ is a full positive-semidefinite matrix. In the present frequency-domain formulation, the relevant assumption is source incoherence, that is, vanishing cross-spectral terms at the analyzed frequency. Then $Q$ is diagonal and can be written as
+\begin{equation}
+    Q = \operatorname{diag}(x) ,
+\end{equation}
+where $x \in \mathbb{R}_+^{N}$ is the source-strength vector.
+
+% Optional full vectorization form for the correlated-source model.
+Using the complex-valued identity $\operatorname{vec}(U Z V^\mathsf{H}) = (V^* \otimes U)\operatorname{vec}(Z)$, the full model can be written as
+\begin{equation}
+    \operatorname{vec}(C) = (H^* \otimes H)\operatorname{vec}(Q) .
+\end{equation}
+Here, $H^* \otimes H \in \mathbb{C}^{M^2 \times N^2}$ denotes the Kronecker product of $H^*$ and $H$, i.e.
+\begin{equation}
+    H^* \otimes H =
+    \begin{bmatrix}
+        H_{1,1}^* H & \cdots & H_{1,N}^* H \\
+        \vdots & \ddots & \vdots \\
+        H_{M,1}^* H & \cdots & H_{M,N}^* H
+    \end{bmatrix} .
+\end{equation}
+This form is relevant for CMF-C, where the unknown is the full matrix $Q$.
+
+Under the incoherent-source assumption, the model reduces to
+\begin{equation}
+    C = H \operatorname{diag}(x) H^\mathsf{H}
+    = \sum_{n=1}^{N} x_n h_n h_n^\mathsf{H} ,
+\end{equation}
+where $h_n \in \mathbb{C}^{M}$ denotes the $n$th column of $H$. Hence,
+\begin{equation}
+    \operatorname{vec}(C) = (H^* \odot H)x ,
+\end{equation}
+where $H^* \odot H \in \mathbb{C}^{M^2 \times N}$ denotes the Khatri-Rao product of $H^*$ and $H$, i.e. the columnwise Kronecker product
+\begin{equation}
+    H^* \odot H = [h_1^* \otimes h_1,\dots,h_N^* \otimes h_N] .
+\end{equation}
+Hence, each column of $H^* \odot H$ is the full vectorization of one rank-one source contribution $h_n h_n^\mathsf{H}$. Since $C$ is Hermitian, it is sufficient to retain the upper triangular entries including the diagonal. Let $\mathcal{S}$ denote the selection of these entries from $\operatorname{vec}(C)$. Then
+\begin{equation}
+    \tilde{y} = \mathcal{S}\operatorname{vec}(\hat{C}) \in \mathbb{C}^{M(M+1)/2}
+\end{equation}
+contains the retained complex entries, and
+\begin{equation}
+    \tilde{A} = \mathcal{S}(H^* \odot H)
+    = [\tilde{a}_1,\dots,\tilde{a}_N] \in \mathbb{C}^{M(M+1)/2 \times N}
+\end{equation}
+is the corresponding complex-valued sensing matrix with
+\begin{equation}
+    \tilde{a}_n = \mathcal{S}\operatorname{vec}(h_n h_n^\mathsf{H}) .
+\end{equation}
+To obtain the real-valued inverse problem, let $\mathcal{R}$ stack the real parts of all retained entries and the imaginary parts of the strict upper triangular entries. Then
+\begin{equation}
+    y = \mathcal{R}(\tilde{y}) \in \mathbb{R}^{M^2}
+\end{equation}
+and
+\begin{equation}
+    A = \mathcal{R}(\tilde{A})
+    = [a_1,\dots,a_N] \in \mathbb{R}^{M^2 \times N},
+\end{equation}
+with
+\begin{equation}
+    a_n = \mathcal{R}\mathcal{S}\operatorname{vec}(h_n h_n^\mathsf{H}) .
+\end{equation}
+% Although only $M(M+1)/2$ complex CSM entries are retained, the real-valued vector has
+% \begin{equation}
+%     \frac{M(M+1)}{2} + \frac{M(M-1)}{2} = M^2
+% \end{equation}
+% scalar entries because the diagonal contributes only real parts.
+% Equivalently, for the matrix entries of $h_n h_n^\mathsf{H}$,
+% \begin{equation}
+%     (h_n h_n^\mathsf{H})_{i,j} = H_{i,n} H_{j,n}^* ,
+% \end{equation}
+% so that the rows of $A$ associated with the real part of $C_{i,j}$ contain $\operatorname{Re}(H_{i,n}H_{j,n}^*)$, while the rows associated with the imaginary part of $C_{i,j}$ for $i < j$ contain $\operatorname{Im}(H_{i,n}H_{j,n}^*)$.
+
+The vectorized CMF model is therefore
+\begin{equation}
+    y = A x + \varepsilon ,
+\end{equation}
+where $\varepsilon$ collects estimation and model errors. A sparse CMF estimate is obtained from
+\begin{equation}
+    \hat{x} =
+    \arg\min_{x \geq 0}
+    \frac{1}{2}\|A x - y\|_2^2 + \lambda \|x\|_1 .
+\end{equation}
+
+Each column of $A$ is the real-valued upper-triangular representation of the rank-one Hermitian matrix $h_n h_n^\mathsf{H}$. Hence, $A$ is dense and typically highly coherent: the diagonal rows contain $|H_{m,n}|^2$, whereas the off-diagonal rows encode pairwise microphone phase relations. Nearby focus-grid points therefore produce similar columns, which makes the inverse problem ill-conditioned.
+
+\section{Method}\label{sec:method}
+
+\section{Experimental Setup}\label{sec:setup}
+
+\section{Results and Discussion}\label{sec:results}
+
+\section{Conclusion}\label{sec:conclusion}
+
+
+\printbibliography
+
+\end{document}
