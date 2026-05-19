@@ -31,6 +31,8 @@ Building on existing unfolded algorithms from the field of sparse recovery, name
 
 \section{Theory}\label{sec:theory}
 
+\subsection{Covariance Matrix Fitting}
+
 At a fixed frequency, let $p_b \in \mathbb{C}^{M}$ denote the microphone snapshot and let $s_b \in \mathbb{C}^{N}$ denote the source snapshot on the focus grid for $b = 1,\dots,K$. With additive noise $n_b \in \mathbb{C}^{M}$, the propagation model is
 \begin{equation}
     p_b = H s_b + n_b ,
@@ -42,10 +44,10 @@ where $H \in \mathbb{C}^{M \times N}$ is the transfer matrix with entries
 Here, $r_{m,n}$ is the distance from focus-grid point $n$ to microphone $m$, $r_{0,n}$ is the distance from focus-grid point $n$ to the reference location, and $k$ is the wavenumber.
 
 The true microphone and source CSMs are
-\begin{equation}
-    C = \mathbb{E}\{p_b p_b^\mathsf{H}\} \in \mathbb{C}^{M \times M}, \qquad
-    Q = \mathbb{E}\{s_b s_b^\mathsf{H}\} \in \mathbb{C}^{N \times N} .
-\end{equation}
+\begin{align}
+    C &= \mathbb{E}\{p_b p_b^\mathsf{H}\} \in \mathbb{C}^{M \times M}, \\
+    Q &= \mathbb{E}\{s_b s_b^\mathsf{H}\} \in \mathbb{C}^{N \times N} .
+\end{align}
 Assuming source-noise independence and spatially white noise with variance $\sigma^2$, the CMF model is
 \begin{equation}
     C = H Q H^\mathsf{H} + \sigma^2 I .
@@ -94,10 +96,10 @@ Hence, each column of $H^* \odot H$ is the full vectorization of one rank-one so
     \tilde{y} = \mathcal{S}\operatorname{vec}(\hat{C}) \in \mathbb{C}^{M(M+1)/2}
 \end{equation}
 contains the retained complex entries, and
-\begin{equation}
-    \tilde{A} = \mathcal{S}(H^* \odot H)
+\begin{multline}
+    \tilde{A} = \mathcal{S}(H^* \odot H) \\
     = [\tilde{a}_1,\dots,\tilde{a}_N] \in \mathbb{C}^{M(M+1)/2 \times N}
-\end{equation}
+\end{multline}
 is the corresponding complex-valued sensing matrix with
 \begin{equation}
     \tilde{a}_n = \mathcal{S}\operatorname{vec}(h_n h_n^\mathsf{H}) .
@@ -135,9 +137,43 @@ where $\varepsilon$ collects estimation and model errors. A sparse CMF estimate 
     \hat{x} =
     \arg\min_{x \geq 0}
     \frac{1}{2}\|A x - y\|_2^2 + \lambda \|x\|_1 .
+    \label{eq:lasso}
 \end{equation}
 
 Each column of $A$ is the real-valued upper-triangular representation of the rank-one Hermitian matrix $h_n h_n^\mathsf{H}$. Hence, $A$ is dense and typically highly coherent: the diagonal rows contain $|H_{m,n}|^2$, whereas the off-diagonal rows encode pairwise microphone phase relations. Nearby focus-grid points therefore produce similar columns, which makes the inverse problem ill-conditioned.
+
+\subsection{FISTA}
+
+FISTA solves \cref{eq:lasso} by proximal gradient descent with momentum.
+Let $\ell \geq \|A^\mathsf{T}A\|_2$ be a Lipschitz constant of $\nabla f(x)=A^\mathsf{T}(Ax-y)$.
+With $t_1=1$ and $x^{(0)}=x^{(-1)}=0$, the iterations are
+\begin{align}
+    t_{k+1} &= \frac{1+\sqrt{1+4t_k^2}}{2}, \\
+    z^{(k)} &= x^{(k)} + \frac{t_k-1}{t_{k+1}}\bigl(x^{(k)}-x^{(k-1)}\bigr), \\
+    x^{(k+1)} &= S^+_{\lambda/\ell}\!\left(z^{(k)} - \tfrac{1}{\ell}\nabla f(z^{(k)})\right),
+\end{align}
+where $S^+_\theta(u)=\max(u-\theta,0)$ is the non-negative soft-threshold operator applied componentwise.
+
+\subsection{IR-FISTA}
+
+IR-FISTA reduces the per-iteration cost by restricting FISTA to an active working set, updated in an outer loop indexed by $r$.
+Let the active and near-violating index sets be
+\begin{align}
+    \Omega_1^{(r)} &= \bigl\{n \mid x_n^{(r)} \neq 0\bigr\}, \\
+    \Omega_2^{(r)} &= \bigl\{n \mid x_n^{(r)}=0,\;
+    \bigl|a_n^\mathsf{T}(Ax^{(r)}-y)\bigr| > (1-\tau)\lambda\bigr\},
+\end{align}
+with tolerance $\tau>0$. The working set is then $\Omega^{(r)} = \Omega_1^{(r)} \cup \Omega_2^{(r)}$.
+The inner FISTA step then solves
+\begin{equation}
+\begin{split}
+    x_{\Omega^{(r)}}^{(r+1)} &=
+    \arg\min_{u \geq 0} \;
+    \tfrac{1}{2}\|A_{\Omega^{(r)}}u-y\|_2^2 + \lambda\|u\|_1, \\
+    x_{(\Omega^{(r)})^c}^{(r+1)} &= 0,
+\end{split}
+\end{equation}
+using a Lipschitz constant $\ell^{(r)} \geq \|A_{\Omega^{(r)}}^\mathsf{T}A_{\Omega^{(r)}}\|_2$ estimated by backtracking.
 
 \section{Method}\label{sec:method}
 
