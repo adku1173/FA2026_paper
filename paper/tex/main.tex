@@ -117,26 +117,17 @@ with
 \begin{equation}
     a_n = \mathcal{R}\mathcal{S}\operatorname{vec}(h_n h_n^\mathsf{H}) .
 \end{equation}
-% Although only $M(M+1)/2$ complex CSM entries are retained, the real-valued vector has
-% \begin{equation}
-%     \frac{M(M+1)}{2} + \frac{M(M-1)}{2} = M^2
-% \end{equation}
-% scalar entries because the diagonal contributes only real parts.
-% Equivalently, for the matrix entries of $h_n h_n^\mathsf{H}$,
-% \begin{equation}
-%     (h_n h_n^\mathsf{H})_{i,j} = H_{i,n} H_{j,n}^* ,
-% \end{equation}
-% so that the rows of $A$ associated with the real part of $C_{i,j}$ contain $\operatorname{Re}(H_{i,n}H_{j,n}^*)$, while the rows associated with the imaginary part of $C_{i,j}$ for $i < j$ contain $\operatorname{Im}(H_{i,n}H_{j,n}^*)$.
 
 The vectorized CMF model is therefore
 \begin{equation}
     y = A x + \varepsilon ,
 \end{equation}
-where $\varepsilon$ collects estimation and model errors. A sparse CMF estimate is obtained from
+where $\varepsilon$ collects estimation and model errors. Let $n_y=\dim(y)$
+denote the number of scalar measurements. A sparse CMF estimate is obtained from
 \begin{equation}
     \hat{x} =
     \arg\min_{x \geq 0}
-    \frac{1}{2}\|A x - y\|_2^2 + \lambda \|x\|_1 .
+    \frac{1}{2n_y}\|A x - y\|_2^2 + \lambda \|x\|_1 .
     \label{eq:lasso}
 \end{equation}
 
@@ -145,7 +136,8 @@ Each column of $A$ is the real-valued upper-triangular representation of the ran
 \subsection{FISTA}
 
 FISTA solves \cref{eq:lasso} by proximal gradient descent with momentum.
-Let $\ell \geq \|A^\mathsf{T}A\|_2$ be a Lipschitz constant of $\nabla f(x)=A^\mathsf{T}(Ax-y)$.
+Let $\ell \geq \|A^\mathsf{T}A\|_2/n_y$ be a Lipschitz constant of
+$\nabla f(x)=A^\mathsf{T}(Ax-y)/n_y$.
 With $t_1=1$ and $x^{(0)}=x^{(-1)}=0$, the iterations are
 \begin{align}
     t_{k+1} &= \frac{1+\sqrt{1+4t_k^2}}{2}, \\
@@ -161,7 +153,7 @@ Let the active and near-violating index sets be
 \begin{align}
     \Omega_1^{(r)} &= \bigl\{n \mid x_n^{(r)} \neq 0\bigr\}, \\
     \Omega_2^{(r)} &= \bigl\{n \mid x_n^{(r)}=0,\;
-    \bigl|a_n^\mathsf{T}(Ax^{(r)}-y)\bigr| > (1-\tau)\lambda\bigr\},
+    \bigl|a_n^\mathsf{T}(Ax^{(r)}-y)/n_y\bigr| > (1-\tau)\lambda\bigr\},
 \end{align}
 with tolerance $\tau>0$. The working set is then $\Omega^{(r)} = \Omega_1^{(r)} \cup \Omega_2^{(r)}$.
 The inner FISTA step then solves
@@ -169,15 +161,87 @@ The inner FISTA step then solves
 \begin{split}
     x_{\Omega^{(r)}}^{(r+1)} &=
     \arg\min_{u \geq 0} \;
-    \tfrac{1}{2}\|A_{\Omega^{(r)}}u-y\|_2^2 + \lambda\|u\|_1, \\
+    \frac{1}{2n_y}\|A_{\Omega^{(r)}}u-y\|_2^2 + \lambda\|u\|_1, \\
     x_{(\Omega^{(r)})^c}^{(r+1)} &= 0,
 \end{split}
 \end{equation}
-using a Lipschitz constant $\ell^{(r)} \geq \|A_{\Omega^{(r)}}^\mathsf{T}A_{\Omega^{(r)}}\|_2$ estimated by backtracking.
+using a Lipschitz constant
+$\ell^{(r)} \geq \|A_{\Omega^{(r)}}^\mathsf{T}A_{\Omega^{(r)}}\|_2/n_y$
+estimated by backtracking.
 
-\section{Method}\label{sec:method}
+\section{Optimization}\label{sec:optimization}
 
-\section{Experimental Setup}\label{sec:setup}
+\subsection{supervised objective}
+
+unfolded solver $f_\mathcal{W} : \mathbb{R}^{M^2} \to \mathbb{R}_+^{N}$ with trainable parameters $\mathcal{W}$, producing
+$\hat{x}^{(K)} = f_{\mathcal W}(y;A)$.
+
+
+
+Given training pairs $\{(y_s,x_s)\}_{s=1}^{S}$ with
+$\hat{x}_s^{(K)} = f_{\mathcal W}(y_s;A)$, supervised training uses
+\begin{equation}
+    \mathcal{L}_{\mathrm{s}}(\mathcal{W}) =
+    \frac{1}{S}\sum_{s=1}^{S}\|x_s - \hat{x}_s^{(K)}\|_2^2 .
+\end{equation}
+
+\subsection{unsupervised objective}
+
+Without ground-truth source maps, the empirical training objective becomes
+\begin{equation}
+    \mathcal{L}_{\mathrm{u}}(\mathcal{W}) =
+    \frac{1}{S}\sum_{s=1}^{S}
+    \left(
+    \frac{1}{2n_y}\|A \hat{x}_s^{(K)} - y_s\|_2^2
+    + \lambda \|\hat{x}_s^{(K)}\|_1
+    \right).
+\end{equation}
+Here, $\lambda$ has to be provided as a hyperparameter.\\
+
+\subsection{unsupervised bi-level objective}
+
+Instead of fixing $\lambda$, the regularization parameter can be selected by
+averaging an outer unsupervised criterion over the training samples. For a
+given $\lambda$, the lower-level problem defines one reconstruction
+$\hat{x}_s^{(\lambda)}$ for each measurement $y_s$.
+
+\begin{equation}
+\begin{aligned}
+\mathcal{L}_{\mathrm{b}}(\mathcal{W}) = \frac{1}{S}\sum_{s=1}^{S}
+\mathcal{C}_s\!\left(\hat{x}_s^{(\lambda)}\right) \\
+\text{s.t.}\quad
+\hat{x}_s^{(\lambda)} &\in
+\underset{x \in \mathbb{R}_+^N}{\arg\min}\; \psi_s(\mathcal{W}),
+\quad s=1,\dots,S .
+\end{aligned}
+\end{equation}
+
+\textit{Cross-Validation}
+
+Let $n_{\text{t}} = \dim(y_{\text{t}})$ and
+$n_{\text{v}} = \dim(y_{\text{v}})$ denote the number of scalar entries in
+the training and validation data vectors, respectively.
+
+outer function
+\begin{equation}
+    \mathcal{C}_{\text{cv}}(\hat{x}) =
+    \frac{1}{2n_{\text{v}}}\|A_{\text{v}} \hat{x} - y_{\text{v}}\|_2^2
+\end{equation}
+
+inner function (\textcolor{red}{or better use $e^{(\lambda)}$}?)
+\begin{equation}
+    \psi_{\text{cv}}(\mathcal{W}) =
+    \frac{1}{2n_{\text{t}}}\|A_{\text{t}} f_{\mathcal W}(y_{\text{t}};A_{\text{t}}) - y_{\text{t}}\|_2^2
+    + \lambda \|\hat{x}\|_1
+\end{equation}
+% what if there is a learned weight matrix involved? Then, psi is a different function.
+
+\textit{Information Criterion}
+
+% either SURE, AIC or BIC or anything more useful? -> Peter? 
+
+
+\section{Experiments}\label{sec:setup}
 
 \section{Results and Discussion}\label{sec:results}
 
